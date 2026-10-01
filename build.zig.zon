@@ -1,0 +1,36 @@
+.{
+    // This is the default name used by packages depending on this one.
+    .name = .predicates,
+    .version = "0.1.0",
+    // Identifies this package unambiguously. This fork is new, so the id was
+    // generated for it rather than inherited from an upstream Zig package;
+    // there is no upstream Zig package to be hostile about it. The value is
+    // the one the Zig 0.16.0 compiler reported for `.name = .predicates`
+    // when it rejected the first generated id; FORK-NOTES.md section 20
+    // carries the receipt.
+    .fingerprint = 0xdce97c15e1aa9aa4, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        // src/predicates.c is the canonical upstream source and is the whole
+        // point of the package. src/root.zig is the facade over it.
+        "src",
+        // The aggregate translated header. It is fork-authored and lives in
+        // include/, not src/, so that the C tree stays exactly upstream's.
+        "include",
+        "test",
+        "examples",
+        // The separate consumer package. It is inside this repository so the
+        // dependency it proves is a relative path that resolves without a
+        // network fetch or a registry entry.
+        "consumer",
+        "UPSTREAM.md",
+        "NOTICE.md",
+        "CHANGELOG.md",
+        "FORK-NOTES.md",
+        "README.md",
+        "README.zig.md",
+    },
+}

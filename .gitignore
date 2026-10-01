@@ -1,0 +1,11 @@
+# Build outputs from `zig build`. Both are directories rather than single files
+# because a normal user build creates them, and a normal user build must not
+# dirty the tree or leak into a package published from it.
+.zig-cache/
+zig-out/
+
+# The consumer package builds inside this repository and has its own output
+# tree. It is ignored here as well as in consumer/.gitignore so that a build
+# run from the repository root cannot be committed by accident.
+consumer/.zig-cache/
+consumer/zig-out/
