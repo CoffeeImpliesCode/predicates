@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: LicenseRef-PublicDomain
+//
+// This file is fork-authored; see FORK-LICENSE.md and NOTICE.md.
+//
 const std = @import("std");
 
 /// A package that consumes `predicates` from outside.
@@ -14,9 +18,38 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // The two delivery options are re-declared here, with the same names, the
+    // same values and the same defaults as the library's own `build.zig`, and
+    // passed straight through.
+    //
+    // Re-declaring rather than forwarding blindly is deliberate: `b.dependency`
+    // fails on an option the dependency does not declare, so a consumer that
+    // names one gets a configure-time error instead of a silently ignored
+    // flag. A consumer that passed `-Druntime=true` while the library was
+    // built linked would be asking its own source for the runtime route and
+    // getting a linked one, which is the same silent drop from the other side.
+    //
+    // `runtime` is orthogonal to `linkage`: the flag says how the facade
+    // reaches the natives, the linkage says which artifact this build installs.
+    // `-Druntime=true` normally pairs with `-Dlinkage=dynamic`, because a
+    // provider for `load` has to be a complete shared object, but the two are
+    // not coupled here and neither implies the other.
+    const linkage = b.option(
+        std.builtin.LinkMode,
+        "linkage",
+        "Ask the library for a static archive (default) or for a shared library",
+    ) orelse .static;
+    const runtime = b.option(
+        bool,
+        "runtime",
+        "Ask the library to resolve its native symbols through the runtime loader instead of through the link line (default: link them)",
+    ) orelse false;
+
     const dep = b.dependency("predicates", .{
         .target = target,
         .optimize = optimize,
+        .linkage = linkage,
+        .runtime = runtime,
     });
 
     const exe_mod = b.createModule(.{
@@ -42,6 +75,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     const run_exe = b.addRunArtifact(exe);
+    if (b.args) |args| run_exe.addArgs(args);
     const run_step = b.step("run", "Build and run the consumer program");
     run_step.dependOn(&run_exe.step);
 }

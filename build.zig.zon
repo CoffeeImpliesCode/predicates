@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: LicenseRef-PublicDomain
+//
+// See FORK-LICENSE.md for what that identifier covers and NOTICE.md for the
+// file inventory. src/predicates.c is upstream's own public-domain file and
+// is outside it.
+//
 .{
     // This is the default name used by packages depending on this one.
     .name = .predicates,
@@ -25,12 +31,56 @@
         // The separate consumer package. It is inside this repository so the
         // dependency it proves is a relative path that resolves without a
         // network fetch or a registry entry.
-        "consumer",
+        "consumer/build.zig",
+        "consumer/build.zig.zon",
+        "consumer/src/main.zig",
+        // The runtime-loading route. `runtime/graph.zig` and
+        // `runtime/library.zig` are the API role's; `runtime/loader.zig`,
+        // `runtime/sync.c`, `runtime/sync.h` and `runtime/generate.zig` are the
+        // loader core the driver copies in. All five are load-bearing for
+        // `-Druntime=true`, and `build.zig` reaches into this directory by name,
+        // so a fetched package without it would carry an option that cannot
+        // work. The linked default does not read any of it, which is why the
+        // dependency stays lazy rather than being duplicated into `build.zig`.
+        "runtime",
+        // The cross-test settings profile and the provenance script CI runs.
+        "cross-test.profile.sh",
+        "tools",
+        // Documentation and licence records. A package that arrived without
+        // these would ship a public-domain file whose grant the recipient
+        // cannot find: upstream has no LICENSE to carry, so NOTICE.md is the
+        // notice, and FORK-LICENSE.md records the terms the fork-authored files
+        // around it were released under.
         "UPSTREAM.md",
+        // The per-file SHA-256 baseline for the one upstream file this package
+        // carries, checked by `tools/check-provenance.sh`. A fetched package
+        // that arrived without it could still be built, but not audited.
+        "UPSTREAM-BASELINE.sha256",
         "NOTICE.md",
+        "FORK-LICENSE.md",
         "CHANGELOG.md",
         "FORK-NOTES.md",
         "README.md",
         "README.zig.md",
+        // The Nix and devenv packaging. These are not needed to compile the
+        // library, which is why a build without them works, but they are the
+        // package's own delivery description and a fetched consumer that could
+        // not see them would be reading a package with no stated terms.
+        // `.envrc` is named explicitly rather than swept in: this list is
+        // spelled out entry by entry, so a dotfile has to be written down like
+        // any other path.
+        "package.nix",
+        "flake.nix",
+        // The resolved inputs of the flake above. It is not needed to compile
+        // the library, which is why a build without it works, but a fetched
+        // package that carried `flake.nix` and not its lock would re-resolve
+        // `nixpkgs` at evaluation time and report a different pin than the
+        // one this repository ships. `devenv.lock` is absent from this tree
+        // and is deliberately not named here: naming a path that does not
+        // exist would make `zig fetch` hash a missing entry.
+        "flake.lock",
+        "devenv.nix",
+        "devenv.yaml",
+        ".envrc",
     },
 }

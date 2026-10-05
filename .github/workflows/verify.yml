@@ -4,13 +4,20 @@
 # retarget: this file is written for this repository and names this
 # repository's gates.
 #
-# Four jobs, four different questions:
+# Six jobs, six different questions:
 #   provenance  does src/predicates.c hash to the digest UPSTREAM.md records,
-#               and is the public domain notice still present in the source,
-#               the notice file and the README
+#               is the public domain notice still present in the source, the
+#               notice file and the README, and does every carried upstream
+#               byte still match UPSTREAM-BASELINE.sha256 with nothing carried
+#               outside that baseline
 #   native      does it build, does the public C header compile, link and run
 #               against the installed archive, do the tests pass and does the
 #               example produce its output on this host
+#   shared      is the `-Dlinkage=dynamic` variant a real shared object: built
+#               position-independent, exporting the whole declared C surface,
+#               with recorded dynamic dependencies and link metadata
+#   runtime     does `-Druntime=true` configure and compile the dispatch route,
+#               and still produce the artifact a loader would open
 #   cross       does it compile and link for the supported target matrix, and does
 #               the one unsupported target still fail for the documented reason
 #   consumer    does the published module resolve from a package that did not
@@ -21,6 +28,13 @@
 # comparison, which a reindentation or a retyped declaration defeats, and it
 # never proved that a consumer could call the header. The header is covered by
 # compiling and linking against it instead.
+#
+# Every build that installs names its own `--prefix`, under `$RUNNER_TEMP`, the
+# per-job scratch directory this file already writes its generated C programs to.
+# A bare `zig build` runs the install step, so an unprefixed install writes
+# `zig-out/` into the checked-out workspace, and two jobs sharing one path would
+# overwrite each other's installed closure. `test`, `smoke`, `check` and the
+# consumer's `run` depend on no install step, so they pass no prefix.
 
 name: verify
 
@@ -40,35 +54,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: upstream source checksum
-        run: |
-          set -euo pipefail
-          expected=$(grep -oE '[0-9a-f]{64}' UPSTREAM.md | head -1)
-          if [ -z "$expected" ]; then
-            echo "UPSTREAM.md records no checksum to compare against" >&2
-            exit 1
-          fi
-          actual=$(sha256sum src/predicates.c | cut -d' ' -f1)
-          if [ "$expected" != "$actual" ]; then
-            echo "src/predicates.c is not the file UPSTREAM.md records" >&2
-            echo "  expected $expected" >&2
-            echo "  actual   $actual" >&2
-            echo "If this is an intentional re-sync, update UPSTREAM.md," >&2
-            echo "NOTICE.md and CHANGELOG.md in the same commit." >&2
-            exit 1
-          fi
-          echo "src/predicates.c matches the recorded upstream checksum"
-
-      - name: public domain notice
-        run: |
-          set -euo pipefail
-          # The grant lives in the C file's own header. It has to survive in
-          # this file, and it has to be reproduced somewhere a reader will
-          # find without opening C source.
-          grep -q "Placed in the public domain by" src/predicates.c
-          grep -q "Placed in the public domain by" NOTICE.md
-          grep -q "Public domain" README.md
-          echo "the public domain notice is present in the source, the notice and the readme"
+      # The checksum, the public-domain notice and the per-file baseline are
+      # one script, and CI runs the script rather than a second copy of its
+      # checks. A second copy would be free to drift from the file it mirrors,
+      # and nothing in this job would detect the drift.
+      - name: upstream checksum, public domain notice and the upstream baseline
+        run: tools/check-provenance.sh
 
       # This job deliberately does not compare declaration names between
       # include/predicates.h and src/predicates.c. A name-set comparison is a
@@ -87,112 +78,36 @@ jobs:
           version: 0.16.0
 
       - name: build
-        run: zig build
+        run: zig build --prefix "$RUNNER_TEMP/static"
 
       # A real gate for the public C surface, and the replacement for the
       # declaration-name comparison that used to sit in the provenance job.
-      # This translation unit includes the installed header, calls every
-      # routine and reads every global that header declares, then links
-      # against the installed archive. A declaration whose type is wrong fails
-      # to compile; a declaration the archive does not define fails to link.
-      # The program runs, and asserts the one result that is certain by hand.
+      # `tools/c_surface_gate.c` includes the installed header, calls every
+      # routine and reads every global that header declares, then links against
+      # the installed archive. A declaration whose type is wrong fails to
+      # compile; a declaration the archive does not define fails to link. The
+      # program runs, and asserts the one result that is certain by hand.
+      #
+      # The same program is the gate for the shared variant, linked against
+      # `libpredicates.so` in the `shared` job below. It is one file rather than
+      # one file per linkage, because two copies of this program would be two
+      # definitions of one gate and they would drift.
       - name: public C header compiles, links and runs
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/c_surface_gate.c" <<'C'
-          #include <predicates.h>
-          #include <stdio.h>
-
-          /* volatile so no optimizer can delete a call: the compile and the
-             link are the assertions, not the values. */
-          static volatile double sink;
-
-          int main(void) {
-              double a[2] = { 0.0, 0.0 };
-              double b[2] = { 1.0, 0.0 };
-              double c[2] = { 0.0, 1.0 };
-              double dd[2] = { 0.0, 0.0 };
-              double p[3] = { 0.0, 0.0, 0.0 };
-              double q[3] = { 1.0, 0.0, 0.0 };
-              double r[3] = { 0.0, 1.0, 0.0 };
-              double s[3] = { 0.0, 0.0, 1.0 };
-              double t[3] = { 0.0, 0.0, 0.5 };
-              double one[1] = { 1.0 };
-              double two[2] = { 0.0, 1.0 };
-              double h[8];
-              double g[8];
-
-              exactinit();
-
-              /* The one asserted result: counterclockwise is positive. */
-              if (orient2d(a, b, c) <= 0.0) return 1;
-
-              sink = orient2dfast(a, b, c);
-              sink = orient2dexact(a, b, c);
-              sink = orient2dslow(a, b, c);
-              sink = orient2dadapt(a, b, c, 1.0);
-
-              sink = orient3dfast(p, q, r, s);
-              sink = orient3dexact(p, q, r, s);
-              sink = orient3dslow(p, q, r, s);
-              sink = orient3dadapt(p, q, r, s, 1.0);
-              sink = orient3d(p, q, r, t);
-
-              sink = incirclefast(b, c, dd, a);
-              sink = incircleexact(b, c, dd, a);
-              sink = incircleslow(b, c, dd, a);
-              sink = incircleadapt(b, c, dd, a, 1.0);
-              sink = incircle(b, c, dd, a);
-
-              sink = inspherefast(q, r, s, p, t);
-              sink = insphereexact(q, r, s, p, t);
-              sink = insphereslow(q, r, s, p, t);
-              sink = insphereadapt(q, r, s, p, t, 1.0);
-              sink = insphere(q, r, s, p, t);
-
-              sink = (double)grow_expansion(1, one, 0.5, h);
-              sink = (double)grow_expansion_zeroelim(1, one, 0.5, h);
-              sink = (double)expansion_sum(1, one, 1, one, h);
-              sink = (double)expansion_sum_zeroelim1(1, one, 1, one, h);
-              sink = (double)expansion_sum_zeroelim2(1, one, 1, one, h);
-              sink = (double)fast_expansion_sum(1, one, 1, one, h);
-              sink = (double)fast_expansion_sum_zeroelim(1, one, 1, one, h);
-              sink = (double)linear_expansion_sum(1, one, 1, one, h);
-              sink = (double)linear_expansion_sum_zeroelim(1, one, 1, one, h);
-              sink = (double)scale_expansion(1, one, 2.0, g);
-              sink = (double)scale_expansion_zeroelim(1, one, 2.0, g);
-              sink = (double)compress(2, two, h);
-              sink = estimate(1, one);
-
-              sink = doublerand();
-              sink = narrowdoublerand();
-              sink = uniformdoublerand();
-              sink = floatrand();
-              sink = narrowfloatrand();
-              sink = uniformfloatrand();
-
-              sink = splitter + epsilon + resulterrbound + ccwerrboundA +
-                     ccwerrboundB + ccwerrboundC + o3derrboundA + o3derrboundB +
-                     o3derrboundC + iccerrboundA + iccerrboundB + iccerrboundC +
-                     isperrboundA + isperrboundB + isperrboundC;
-
-              printf("public C surface compiled, linked and ran\n");
-              return 0;
-          }
-          C
           # The same flags the library itself is compiled with. The header
           # states them as requirements, so a consumer that ignores them gets
           # a valid build and a wrong sign; this gate uses them.
           zig cc -std=gnu17 -ffp-contract=off -fno-fast-math \
-            -I zig-out/include \
-            "$RUNNER_TEMP/c_surface_gate.c" \
-            zig-out/lib/libpredicates.a \
+            -I "$RUNNER_TEMP/static/include" \
+            tools/c_surface_gate.c \
+            "$RUNNER_TEMP/static/lib/libpredicates.a" \
             -o "$RUNNER_TEMP/c_surface_gate"
           "$RUNNER_TEMP/c_surface_gate"
 
-      # Debug and ReleaseSafe are the two modes where std.debug.assert is live,
-      # so they are the two modes where the facade's initialization guard can
-      # actually catch a caller that skipped init().
+      # These jobs exercise the facade in Debug and ReleaseSafe. Its ordinary
+      # initialization comparison and panic also remain live in ReleaseFast
+      # and ReleaseSmall; those modes have no additional CI jobs here.
       - name: test (Debug)
         run: zig build test
 
@@ -201,6 +116,153 @@ jobs:
 
       - name: smoke
         run: zig build smoke
+
+  # The second delivery variant. It exists because `-Dlinkage=dynamic` is a
+  # claim this fork makes about the artifact, and a claim about an artifact
+  # needs an artifact to be made about.
+  #
+  # Three separate things are checked, because a file with a `.so` name can
+  # fail any of them while still looking like a shared library:
+  #
+  #   * it is a shared object at all, and not an archive renamed;
+  #   * it was compiled position-independently. TEXTREL is the failure that
+  #     matters: a non-PIC object the linker had to load-fix up says so by
+  #     asking for writable text, and a loader that maps it read-only refuses
+  #     it;
+  #   * every declared function and global is reachable through its dynamic
+  #     export table, which is what the C consumer below proves.
+  #
+  # That last point is not asserted from a name list.
+  # `tools/c_surface_gate.c` calls all forty routines and reads all fifteen
+  # globals `include/predicates.h` declares, so linking it against this object
+  # fails if any one of the fifty-five is missing from the export table — which
+  # is the same gate the static job runs against the archive.
+  shared:
+    name: "shared object: PIC, export surface, and a C consumer"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      # A scratch prefix, as the native job above uses: `-Dlinkage=dynamic` is
+      # still the default step and still installs, and its closure is read
+      # below rather than from the tree.
+      - name: build
+        run: zig build -Dlinkage=dynamic --prefix "$RUNNER_TEMP/shared"
+
+      - name: the artifact is a shared object, built PIC, with no text relocations
+        run: |
+          set -euo pipefail
+          so="$RUNNER_TEMP/shared/lib/libpredicates.so"
+          if [ ! -f "$so" ]; then
+            echo "-Dlinkage=dynamic did not install $so" >&2
+            exit 1
+          fi
+          readelf -h "$so" | grep -E 'Type:[[:space:]]+DYN' \
+            || { echo "$so is not an ET_DYN object" >&2; readelf -h "$so" >&2; exit 1; }
+          if readelf -d "$so" | grep -q 'TEXTREL'; then
+            echo "$so carries TEXTREL: it was not built position-independent" >&2
+            readelf -d "$so" >&2
+            exit 1
+          fi
+          echo "shared object, position-independent, no text relocations"
+
+      - name: its dynamic dependencies are recorded
+        run: |
+          set -euo pipefail
+          # `src/predicates.c` calls POSIX random(), so a libc entry is a real
+          # dependency of this artifact and has to be visible in DT_NEEDED. A
+          # shared object with an empty dynamic section is a file with a
+          # library's name and none of its behaviour.
+          readelf -d "$RUNNER_TEMP/shared/lib/libpredicates.so" | grep -E 'NEEDED' \
+            || { echo "DT_NEEDED is empty: no dependency was recorded" >&2; exit 1; }
+          readelf -d "$RUNNER_TEMP/shared/lib/libpredicates.so" | grep -E 'NEEDED|SONAME' || true
+
+      - name: the whole declared C surface is exported and runs through it
+        run: |
+          set -euo pipefail
+          zig cc -std=gnu17 -ffp-contract=off -fno-fast-math \
+            -I "$RUNNER_TEMP/shared/include" \
+            tools/c_surface_gate.c \
+            -L "$RUNNER_TEMP/shared/lib" -lpredicates \
+            -Wl,-rpath,"$RUNNER_TEMP/shared/lib" \
+            -o "$RUNNER_TEMP/c_surface_gate_shared"
+          "$RUNNER_TEMP/c_surface_gate_shared"
+
+      - name: pkg-config metadata answers for the installed prefix
+        run: |
+          set -euo pipefail
+          pc="$RUNNER_TEMP/shared/lib/pkgconfig/predicates.pc"
+          if [ ! -f "$pc" ]; then
+            echo "no pkg-config metadata at $pc" >&2
+            exit 1
+          fi
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/shared/lib/pkgconfig"
+          # The `pcfiledir`-relative prefix is what makes these answers correct
+          # for the scratch prefix this job installed into and for a Nix $out
+          # alike; a hardcoded /usr/local would be right for neither.
+          cflags=$(pkg-config --cflags predicates)
+          libs=$(pkg-config --libs predicates)
+          case "$cflags" in
+            *"$RUNNER_TEMP/shared/include"*) ;;
+            *) echo "unexpected Cflags: $cflags" >&2; exit 1;;
+          esac
+          case "$libs" in
+            *-lpredicates*) ;;
+            *) echo "unexpected Libs: $libs" >&2; exit 1;;
+          esac
+          echo "Cflags: $cflags"
+          echo "Libs:   $libs"
+
+  # The runtime-loading configuration. It exists so that `-Druntime=true` is a
+  # configuration with a gate rather than a flag nobody ever turns: this job
+  # proves the graph configures, that the dispatch route compiles against the
+  # facade, and — the point of the whole option — that the native artifact is
+  # still produced, because a loader has nothing to load without a provider.
+  #
+  # What it deliberately does not do is claim a loaded consumer ran. Startup,
+  # failure, retry, idempotence, provider change and the pre-publication panic
+  # in every optimize mode are behavioural questions about the API role's tests
+  # and the loader core, and no assertion about them belongs in a job that only
+  # builds. Nothing here creates, stubs or substitutes any runtime file: if
+  # `runtime/loader.zig`, `runtime/sync.c`, `runtime/sync.h` or
+  # `runtime/generate.zig` is absent, this job fails with the compiler's own
+  # FileNotFound, which is the correct report.
+  runtime:
+    name: runtime-loading route compiles and still installs the provider
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      # Each of the three configurations below installs, so each names its own
+      # scratch prefix. They would otherwise share one tree and a later
+      # configuration's install would land on top of the one the step after it
+      # is about to read.
+      - name: build
+        run: zig build -Druntime=true -Dlinkage=dynamic --prefix "$RUNNER_TEMP/runtime-dynamic" --summary all
+
+      - name: the provider the loader would open is still installed
+        run: |
+          set -euo pipefail
+          if [ ! -f "$RUNNER_TEMP/runtime-dynamic/lib/libpredicates.so" ]; then
+            echo "-Druntime=true did not install the artifact it built" >&2
+            exit 1
+          fi
+
+      - name: the linked configuration still builds
+        run: zig build --prefix "$RUNNER_TEMP/linked" --summary all
+
+      - name: the two options are independent
+        # -Druntime=true with a static artifact is a real configuration: the
+        # facade resolves through the table while the build still produces an
+        # archive. Refusing the combination would be a rule this graph has no
+        # basis for, and silently turning it into a linked build would be worse.
+        run: zig build -Druntime=true -Dlinkage=static --prefix "$RUNNER_TEMP/runtime-static" --summary all
 
   cross:
     name: check ${{ matrix.target }}

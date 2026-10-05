@@ -9,3 +9,16 @@ zig-out/
 # run from the repository root cannot be committed by accident.
 consumer/.zig-cache/
 consumer/zig-out/
+
+# Nix and devenv working directories. `devenv shell` creates `.devenv/` and
+# `nix develop` through .envrc creates `.direnv/`; both are state, not source,
+# and both belong outside a commit and outside a flake source. `package.nix`
+# filters them by name as well, so the Nix output is clean whether or not this
+# file is consulted.
+.devenv/
+.direnv/
+
+# A Nix build leaves a `result` symlink at the flake root pointing into the
+# store. It names a store path that changes on every rebuild, so committing it
+# would be recording a build receipt in the source tree.
+/result

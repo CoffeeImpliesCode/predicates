@@ -11,5 +11,6 @@
 test {
     _ = @import("exact_oracle.zig");
     _ = @import("predicates_test.zig");
+    _ = @import("raw_surface_test.zig");
     _ = @import("expansion_test.zig");
 }

@@ -169,11 +169,10 @@ concurrent write is undefined behaviour regardless of what it writes.
 **Decision.** `src/root.zig` keeps an atomic state word and `init()` runs
 `exactinit()` under a compare-and-swap, with losers spinning on an acquire load
 against the winner's release store. Exactly one thread ever executes it. Every
-facade predicate calls a `requireInit()` that is `std.debug.assert`, so a Debug
-or ReleaseSafe build reports a missed initialization at the call site rather
-than returning a wrong sign quietly. `exactinit` itself stays reachable through
-`predicates.c` for anyone who wants upstream's semantics exactly, including its
-hazard.
+facade predicate and constant accessor calls `requireInit()`, whose ordinary
+comparison panics on a missed initialization in every optimize mode before
+reaching the C. `exactinit` itself stays reachable through `predicates.c`
+for anyone who wants upstream's semantics exactly, including its hazard.
 
 **Not chosen.** `std.Thread.Once` does not exist in Zig 0.16's std, and
 `std.Thread.Futex` does not either. The state word is ten lines and has no
@@ -524,12 +523,16 @@ diagnostics themselves, both of which are properties of the 1996 source.
   for trusting this fork. Section 1 records that trade already: a hard checksum
   was chosen over a cleaner diff, and it is not given up for one target.
 
-**What was done instead.** The target stays in the matrix. `zig build check`
-attempts all six; five compile and link, and x86_64-windows-gnu fails with the
-39 diagnostics above, so the step exits non-zero. CI makes the same per-target
-attempts and marks only that one `continue-on-error`, because it is the only
-target for which this fork has evidence that the source cannot build. The
-failure stays a recorded fact about the source rather than a hidden one.
+**What was done instead.** The target stays in the matrix and is named, but it
+is refused rather than attempted. `zig build check` walks
+`supported_check_targets` — the five rows that compile and link — and is green
+over all of them. `refused_check_targets` holds `x86_64-windows-gnu`, and asking
+for it by name ends at `refuseTarget` with the reason printed, before any graph
+is configured and with no compiler invoked. CI is where the refused row is still
+run: its cross job passes an explicit `-Dtarget` per cell and marks only that one
+`continue-on-error`, because it is the only target for which this fork has
+evidence that the source cannot build. The failure stays a recorded fact about
+the source rather than a hidden one.
 
 **What this costs a consumer.** A project targeting windows-gnu cannot use this
 package, and neither could it compile `predicates.c` itself against a C library
@@ -541,3 +544,226 @@ rather than discovered at the first link error.
 The evidence is the compile diagnostics, the two header files cited above, and
 the reading of `src/predicates.c`; every statement about behaviour on Windows
 is a statement about what would fail to build.
+
+## 22. The native surface is 40 functions and 15 globals, and the header matches
+
+**Established by enumeration during this documentation pass.** The
+comment-stripped source of `src/predicates.c` defines 40 externally visible
+functions and declares 15 file-scope `REAL` globals at
+`src/predicates.c:361`-`368`, which `exactinit` alone writes, at
+`src/predicates.c:651`-`656` and `670`-`682`.
+
+Stripping block comments matters. A plain scan finds 43 function definitions,
+because `doubleprint`, `floatprint` and `expansion_print` sit inside `/* ... */`
+blocks at `src/predicates.c:379`, `426` and `472`: upstream ships those three
+debug printers commented out, they are not compiled, and the file links without
+them. The macro `REALPRINT` at `src/predicates.c:134` still names
+`doubleprint`, which is why a naive read of the macros suggests a symbol that
+does not exist in the archive.
+
+`include/predicates.h` declares exactly those 40 functions and exactly those 15
+globals, checked in both directions: nothing defined and undeclared, nothing
+declared and undefined. That is a completeness statement about the aggregate
+header, and it is deliberately **not** a gate. Section 21 already rejected the
+name-set comparison as a test, because a name-set comparison cannot tell a
+reindented declaration from a retyped one. The enumeration here is a
+cross-check on the record, not a replacement for compiling and linking against
+the header.
+
+**Why it is worth writing down.** Section 21 arrived at "forty old-style
+definitions" by subtracting diagnostics: 40 minus the six that reported the
+undeclared `random()`, minus `exactinit`, which reports nothing. This pass
+counted the definitions in the source instead. Two different routes, the same
+number, and neither derived from the other.
+
+## 23. Fifteen mutable globals make the loader contract a correctness contract
+
+**Fact.** `splitter`, `epsilon` and the thirteen error bounds are not constants.
+`exactinit()` writes them; every robust predicate reads them; all of them are
+zero until it runs. All fifteen are exported, so a runtime-loaded provider sees
+them as data symbols.
+
+**Why this is not a loader detail.** If the functions are resolved from a loaded
+provider and the globals are addressed against anything else — a linked copy,
+or another handle — then the predicates run against a set of constants that
+`exactinit` may never have written. Before it runs, those constants are zero,
+which is precisely the failure `init()` exists to prevent, and the sign
+guarantee goes with them. The two copies also collide on the same symbol names
+in one process, so whichever `exactinit` runs first decides for both.
+
+**What follows.** A loaded call must resolve the globals through the same
+provider as the functions, and the loaded route must run `exactinit` through
+that provider too. `NOTICE.md` item 12 and `README.zig.md` state it, because
+this is the kind of property that a later, apparently unrelated change to the
+loader would break silently, and nothing in a sign test would look like the
+cause.
+
+## 24. Standalone packaging, and what it deliberately does not do
+
+**`package.nix` is the only derivation.** `flake.nix` and `devenv.nix` both
+`callPackage` it with an injected `zig` and a `linkage`, so the two entry points
+cannot describe different builds and no second convention lives in the
+derivation. It compiles this repository and nothing else: no upstream fetch, no
+`../` sibling, no host path, no user name, no store path.
+
+Decisions worth not rediscovering:
+
+* **Variants belong to the entry points.** `linkage` is passed straight through
+  as `-Dlinkage`, Zig's own `std.builtin.LinkMode` spelling; `default` stays
+  static, which is this SDK's native policy.
+* **`build.zig` is the single owner of the installed layout** — the artifact,
+  `include/predicates.h`, the generated `lib/pkgconfig/predicates.pc` and the
+  three licence files at `share/licenses/predicates/`. `package.nix` installs
+  nothing by hand, so `nix build` and `zig build install` agree by construction.
+* **One real phase.** `dontBuild` and `dontConfigure` are set because the
+  derivation has an explicit install-only phase; `dontInstall` is deliberately
+  not, since it would disable it. Leaving the hook's build phase enabled would
+  compile the graph twice, once with default flags.
+* **Caches live under Nix's `TMPDIR`**, both `ZIG_LOCAL_CACHE_DIR` and
+  `ZIG_GLOBAL_CACHE_DIR`, outside the unpacked tree, alongside `-j
+  NIX_BUILD_CORES`, one `-Doptimize`, `-Dcpu=baseline` and `--prefix $out`.
+* **No soname series.** `build.zig` sets no `.version`, so the shared object is
+  `libpredicates.so`, not `libpredicates.so.0` plus a symlink. Upstream has no
+  version, tag or series; `0.1.0` in `build.zig.zon` is this fork's own and
+  describes no ABI.
+* **No C flags in Nix.** `-std=gnu17`, `-ffp-contract=off` and `-fno-fast-math`
+  are correctness requirements of this source and live in `build.zig`.
+* **No eager build.** The dev shell installs tools only; the SDK is reached
+  through devenv's lazy `outputs.static` / `outputs.shared`, which call the same
+  `package.nix`. Gates are `sdk:`-namespaced tasks running `zig build`.
+* **No wholly-static-closure claim.** `static` and `shared` name the artifact
+  this build produced; what a consumer links is the consumer's business. libc is
+  propagated because the source calls POSIX `random()`, and nothing else.
+* **Native build only.** No `-Dtarget` is passed, so a Nix cross package would
+  build for the wrong host. `package.nix` compares `stdenv.hostPlatform.system`
+  with `stdenv.buildPlatform.system` and throws; `builtins.currentSystem` is
+  impure and unusable in evaluation.
+* **Two provenance implementations.** `tools/check-provenance.sh` is the
+  implementation of record; the `provenance` job in `.github/workflows/verify.yml`
+  carries its own copy of the same greps. That file is CI wiring this role does
+  not own, and collapsing the job onto the script is a one-line change.
+
+**Not observed.** No `nix` or `devenv` command was run for this section. Whether
+either derivation evaluates, builds or installs the layout described here is
+unverified and belongs to the driver. `flake.lock` and `devenv.lock` are the
+driver's; no hash in `flake.nix` or `devenv.yaml` was invented.
+
+## 25. A PE/COFF DLL from this source would export nothing
+
+**Separate cause, same target.** Section 21 records why
+`x86_64-windows-gnu` cannot compile the canonical source: POSIX `random()` and
+old-style definitions. That is a compile failure. This is a different one, and
+it would still be there if the compile were fixed.
+
+**Fact.** All 40 externally visible definitions and all 15 globals in
+`src/predicates.c` have external linkage, and none carries a visibility
+attribute, an `__declspec(dllexport)`, or anything else a PE/COFF linker needs
+in order to put a name in the DLL export table. On ELF and Mach-O that is
+enough — everything with external linkage is exported, with no export list and
+no version script — but a PE/COFF image exports a symbol only when that symbol
+is marked. A shared build for that target would therefore link, and would hand
+back a library that exports nothing a consumer could call.
+
+**Why nothing was done about it.** Marking any of those 55 symbols is an edit to
+the canonical file, which section 1 already refused for a smaller reason. The
+other available answers are worse: a linker `.def` file or `--export-all-symbols`
+would be a second, invisible statement of the surface that disagrees with
+`include/predicates.h` the first time one of them changes, and `dllexport` on
+the ELF side is a toolchain-specific annotation this project has no business
+adding to a 1996 public-domain file.
+
+**What is done instead.** `zig build check -Dlinkage=dynamic` compiles the same
+five buildable rows against the shared object and refuses the sixth by name,
+instead of narrowing the matrix to the rows that would be convenient.
+`flake.nix` exposes no Windows system, so the question does not arise in a Nix
+build either. The boundary is stated in `README.md`, `README.zig.md`, `NOTICE.md`
+item 9 and the `devenv.nix` `sdk:check-shared` task, because a consumer who finds
+it by `dlsym`-ing a DLL finds it the expensive way.
+
+## 26. A devenv task inherits the caller's working directory, not this checkout
+
+**Observed on this host, 2026-10-04, through the pinned devenv.** Entered from a
+project directory outside this checkout, `devenv tasks run --mode single` on the
+two canonical entries failed with
+
+```
+/nix/store/…-sdk-consumer: line 3: cd: consumer: No such file or directory
+/nix/store/…-sdk-provenance: line 3: tools/check-provenance.sh: No such file or directory
+```
+
+devenv materialises a task as a generated shell program and runs it with the
+working directory the environment was entered from. That directory is the
+devenv project: it holds `.devenv/` and `devenv.lock` and none of `build.zig`,
+`consumer/` or `tools/`. It is not this SDK, and `$DEVENV_ROOT` names that
+project rather than the SDK, so a body written against `$DEVENV_ROOT` would
+have failed identically.
+
+**Decision.** Every body that needs a file in this SDK resolves
+`builtins.toString ./.` before it runs anything: the build, test, smoke and
+check bodies change to that directory, the consumer body changes to
+`consumer/` inside it, and the provenance body hands the path to a tool that
+resolves its own root. `./.` is relative to the module that writes it, so it is
+this SDK's directory whatever the caller started from.
+`builtins.toString` and not a bare path interpolated into the string: a path
+that keeps its string context can be copied into the read-only Nix store, and a
+task that then changed into that copy would be building where it cannot write.
+The path is quoted once, with `lib.escapeShellArg`, so no body re-quotes one by
+hand. `sdk:provenance` also changes to the SDK root before invoking the script;
+`tools/check-provenance.sh:28` independently resolves the repository from its
+own `$0`.
+
+**And the prefix, which is the same defect seen from the other side.** A
+default `zig build` installs — `build.zig:679` (the artifact), `:689-691` (the
+generated pkg-config file), `:703-705` (the three licence records) and `:722`
+(the smoke program's compilation) are all behind the install step — so a task
+that ran it with no prefix wrote a delivery tree into the checkout, which for
+a source tree on a network mount is output nobody asked for. Both delivery
+tasks therefore pass `--prefix` to `$ZIG_LOCAL_CACHE_DIR/predicates/static` or
+`…/shared`, and refuse with a message when no local cache was named rather than
+choose a location themselves. `build.zig` owns the installed layout either way;
+`--prefix` only says where that layout lands, which is why this is an input to
+the existing graph and not a change to it. Generated task programs retain
+`"$@"`: `--prefix P`, `-p P` and `--prefix=P` are detected and used unchanged,
+and other arguments reach `zig build` as written. devenv 2.4 `tasks run` cannot
+forward arguments, so that CLI does not exercise this forwarding. All eight
+Zig build routes supply fixed `-j8`, explicit `--cache-dir "$ZIG_LOCAL_CACHE_DIR"`
+and `--summary all` before any forwarded arguments.
+
+`test` (`build.zig:744`), `smoke` (`:730-731`, and `:724-727` records that it
+deliberately does not run the install step), `check` (`:758-781`) and the
+consumer package's `run` step (`consumer/build.zig:78-79`) install nothing, so
+those bodies carry no prefix: there is no delivery output to move, and an
+invented flag on a compile-only or run-only step would be noise.
+
+Each Zig build task now runs `chooseCaches`, not only `enterShell`. Exported
+cache values remain unchanged; missing values use `$XDG_CACHE_HOME`, then
+`$TMPDIR`. Without either root the helper exits non-zero rather than allowing
+Zig's default caches inside the checkout. The delivery helper's two branches
+share this preamble and preserve the static/shared linkage defaults.
+
+**Numerical review (source-only).** The translated `c` module is private:
+`predicates.c` retains native linkage/dispatch, unlike `dep.module("c")`.
+The consumer run forwards `b.args` for `--provider`. CI installing builds use
+external prefixes and their installed consumers follow those paths.
+`src/root.zig` and `README.zig.md` correct scratch and magnitude obligations
+against `src/predicates.c:1446-1456,1491-1503,1575-1578,1627-1652`; the contrary
+`include/predicates.h:153-161` comments remain unchanged by constraint.
+The initialization guard now uses an ordinary comparison and panic in every
+mode. The driver's before probes exposed the missing guard; initialized
+controls returned the independent values `6` and `-6`.
+
+**OBSERVED, 2026-10-04 (driver, Zig 0.16.0, x86_64-linux-gnu).** Both
+ReleaseFast and ReleaseSmall after probes passed: all four builds exited `0`;
+uninitialized runs exited `-6` (SIGABRT) with the facade's required panic;
+initialized runs exited `0`, printing determinant `6` and reversed `-6`.
+Let `A=/home/tmp2/gertullj/scratch/foundation-libs/numerical-contract-probes`,
+`L=predicates-init-guard` or `predicates-init-control`, `M=ReleaseFast` or
+`ReleaseSmall`, and `W=$A/work/relative-path-repair/after/$L/$M`.
+From `$A/predicates`, the pinned compiler ran `build -j8 --summary all
+--cache-dir $W/local --global-cache-dir $W/global --prefix $W/prefix
+-Dtarget=x86_64-linux-gnu -Doptimize=$M -Dprobe=uninitialized` (guard) or
+`-Dprobe=initialized` (control), then `$W/prefix/bin/numerical-probe`.
+Exact compiler/argv and results: `$A/receipts/relative-path-repair/after/
+{predicates-init-guard,predicates-init-control}/{ReleaseFast,ReleaseSmall}/receipt.json`.
+These are focused guard/control results, not the permanent four-mode suite.
+No execution was performed by this source worker.

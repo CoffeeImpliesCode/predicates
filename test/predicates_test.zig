@@ -7,8 +7,9 @@
 //!
 //! What is deliberately NOT asserted is any magnitude. Upstream guarantees the
 //! sign of `orient2d` and friends and explicitly does not guarantee the
-//! magnitude, which is a scaled approximation of the permanent. Asserting on it
-//! would pin an incidental detail of the adaptive loop.
+//! magnitude, which is its own adaptive determinant approximation rather than
+//! any scaled permanent. Asserting on it would pin an incidental detail of the
+//! adaptive loop.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -16,6 +17,7 @@ const testing = std.testing;
 
 const predicates = @import("predicates");
 const oracle = @import("exact_oracle.zig");
+const support = @import("support.zig");
 
 const Point2 = predicates.Point2;
 const Point3 = predicates.Point3;
@@ -157,7 +159,7 @@ fn nudgePoint3(p: Point3, step: i64) Point3 {
 test "init is idempotent and observable" {
     // Test order is not a contract, so this establishes the precondition
     // itself rather than assuming an earlier test ran.
-    predicates.init();
+    try support.ready();
     try testing.expect(predicates.isInitialized());
     predicates.init();
     predicates.init();
@@ -205,6 +207,9 @@ fn runConcurrentInits(count: usize) !void {
 test "concurrent init does not race on the C globals" {
     // wasi has no threads; the helper above is never analysed for it.
     if (comptime builtin.os.tag == .wasi) return error.SkipZigTest;
+    // The provider has to be in place before any worker thread calls
+    // `exactinit` through it, and test order is not a contract.
+    try support.ready();
     try runConcurrentInits(8);
     try testing.expect(predicates.isInitialized());
     try checkOrient2d(
@@ -220,7 +225,7 @@ test "concurrent init does not race on the C globals" {
 // ---------------------------------------------------------------------------
 
 test "every facade entry point rejects non-finite coordinates" {
-    predicates.init();
+    try support.ready();
     const nan = std.math.nan(f64);
     const inf = std.math.inf(f64);
     const p0: Point2 = .{ .x = 0, .y = 0 };
@@ -253,7 +258,7 @@ test "every facade entry point rejects non-finite coordinates" {
 }
 
 test "infinities are refused even where a filter might survive them" {
-    predicates.init();
+    try support.ready();
     const huge: Point2 = .{ .x = std.math.inf(f64), .y = 0 };
     const also_huge: Point2 = .{ .x = 0, .y = std.math.inf(f64) };
     try testing.expectError(
@@ -267,35 +272,19 @@ test "infinities are refused even where a filter might survive them" {
 // ---------------------------------------------------------------------------
 
 test "orient2d matches the exact oracle on ordinary inputs" {
-    predicates.init();
+    try support.ready();
     try checkOrient2d("counterclockwise unit triangle", .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 });
     try checkOrient2d("clockwise unit triangle", .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 0 }, .{ .x = 0, .y = 1 });
     try checkOrient2d("counterclockwise, negative quadrant", .{ .x = -1, .y = -1 }, .{ .x = 1, .y = -1 }, .{ .x = -1, .y = 1 });
     // Small enough to be a stress case, large enough that the area itself is
-    // a normal double.  A smaller triangle is covered by the divergence test
-    // below rather than smuggled in here.
+    // a normal double.  A smaller triangle leaves the double range, where this
+    // package guarantees no sign; see FORK-NOTES.md, "Extreme inputs are not
+    // covered by upstream's guarantee", for why.
     try checkOrient2d("tiny triangle at the origin", .{ .x = 0, .y = 0 }, .{ .x = 2.0e-150, .y = 0 }, .{ .x = 0, .y = 2.0e-150 });
 }
 
-test "an area below the double range is a documented divergence, not an oracle bug" {
-    // Upstream's orient2d forms `adx*cdy - cdx*ady` in doubles, so a
-    // triangle whose area is 4e-600 underflows to zero while the exact
-    // oracle, which works in integers, still says positive.  That is a
-    // property of double arithmetic, not of the C or of this wrapper, and
-    // upstream does not guarantee a sign for it.  It is pinned here as an
-    // observed divergence so the two witnesses are not confused if they ever
-    // drift apart.
-    predicates.init();
-    var scratch = Scratch.init();
-    defer scratch.deinit();
-    const want = try oracle.orient2dSign(scratch.allocator(), 0, 0, 2.0e-300, 0, 0, 2.0e-300);
-    const got = try predicates.orient2dSign(.{ .x = 0, .y = 0 }, .{ .x = 2.0e-300, .y = 0 }, .{ .x = 0, .y = 2.0e-300 });
-    try testing.expectEqual(oracle.Sign.positive, want);
-    try testing.expectEqual(predicates.Sign.zero, got);
-}
-
 test "orient2d is exactly zero on degenerate input" {
-    predicates.init();
+    try support.ready();
     try checkOrient2d("collinear on the diagonal", .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 });
     try checkOrient2d("collinear on an axis", .{ .x = 0, .y = 0 }, .{ .x = 0, .y = 5 }, .{ .x = 0, .y = -5 });
     try checkOrient2d("all three identical", .{ .x = 3, .y = -4 }, .{ .x = 3, .y = -4 }, .{ .x = 3, .y = -4 });
@@ -308,7 +297,7 @@ test "orient2d matches the exact oracle over a wide coordinate range" {
     // expression forms stays inside the double range. Subnormal and
     // near-floatMax inputs are excluded on purpose; see FORK-NOTES.md,
     // "Extreme inputs are not covered by upstream's guarantee", for why.
-    predicates.init();
+    try support.ready();
     const small = std.math.ldexp(@as(f64, 1.0), -400);
     const large = std.math.ldexp(@as(f64, 1.0), 400);
     try checkOrient2d(
@@ -326,7 +315,7 @@ test "orient2d matches the exact oracle over a wide coordinate range" {
 }
 
 test "orient2d survives ulp-scale perturbations of near-degenerate triangles" {
-    predicates.init();
+    try support.ready();
     const bump = std.math.ldexp(@as(f64, 1.0), -52);
     const bases = [_][3]Point2{
         // A hair off the line through (1,1).
@@ -356,7 +345,7 @@ test "orient2d survives ulp-scale perturbations of near-degenerate triangles" {
 }
 
 test "orient2dfast loses the sign where orient2d does not" {
-    predicates.init();
+    try support.ready();
     // The exact determinant is (1+2^-52)(1-2^-52) - 1 = -2^-104, which is
     // about 2^-156 of the size of the terms it is made from. Both products
     // round to 1.0 in binary64, so the fast path returns zero.
@@ -374,7 +363,7 @@ test "orient2dfast loses the sign where orient2d does not" {
 // ---------------------------------------------------------------------------
 
 test "orient3d matches the exact oracle on ordinary inputs" {
-    predicates.init();
+    try support.ready();
     try checkOrient3d(
         "apex above the xy plane",
         .{ .x = 0, .y = 0, .z = 0 },
@@ -399,7 +388,7 @@ test "orient3d matches the exact oracle on ordinary inputs" {
 }
 
 test "orient3d is exactly zero on degenerate input" {
-    predicates.init();
+    try support.ready();
     try checkOrient3d(
         "all four coplanar in z = 0",
         .{ .x = 0, .y = 0, .z = 0 },
@@ -426,7 +415,7 @@ test "orient3d is exactly zero on degenerate input" {
 test "orient3d matches the exact oracle over a wide coordinate range" {
     // Three hundred octaves apart. See the orient2d note above on why the
     // extreme ends of the double range are not used here.
-    predicates.init();
+    try support.ready();
     const small = std.math.ldexp(@as(f64, 1.0), -300);
     const large = std.math.ldexp(@as(f64, 1.0), 300);
     try checkOrient3d(
@@ -446,7 +435,7 @@ test "orient3d matches the exact oracle over a wide coordinate range" {
 }
 
 test "orient3d survives ulp-scale perturbations of a nearly flat tetrahedron" {
-    predicates.init();
+    try support.ready();
     const bump = std.math.ldexp(@as(f64, 1.0), -52);
     const base = [4]Point3{
         .{ .x = 1, .y = 1, .z = 1 },
@@ -472,14 +461,14 @@ test "orient3d survives ulp-scale perturbations of a nearly flat tetrahedron" {
 // ---------------------------------------------------------------------------
 
 test "incircle matches the exact oracle on ordinary inputs" {
-    predicates.init();
+    try support.ready();
     try checkIncircle("origin inside the unit circle", .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = -1, .y = 0 }, .{ .x = 0, .y = 0 });
     try checkIncircle("far point outside the unit circle", .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = -1, .y = 0 }, .{ .x = 7, .y = -3 });
     try checkIncircle("reversed orientation puts the origin outside", .{ .x = -1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 0 });
 }
 
 test "incircle is exactly zero on degenerate input" {
-    predicates.init();
+    try support.ready();
     try checkIncircle("fourth point on the same circle", .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = -1, .y = 0 }, .{ .x = 0, .y = -1 });
     try checkIncircle("fourth point repeats a defining point", .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = -1, .y = 0 }, .{ .x = 1, .y = 0 });
     try checkIncircle("defining points collinear", .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 }, .{ .x = 3, .y = 3 });
@@ -489,7 +478,7 @@ test "incircle is exactly zero on degenerate input" {
 test "incircle matches the exact oracle over a wide coordinate range" {
     // Two hundred octaves apart. See the orient2d note above on why the
     // extreme ends of the double range are not used here.
-    predicates.init();
+    try support.ready();
     const small = std.math.ldexp(@as(f64, 1.0), -200);
     const large = std.math.ldexp(@as(f64, 1.0), 200);
     try checkIncircle(
@@ -509,7 +498,7 @@ test "incircle matches the exact oracle over a wide coordinate range" {
 }
 
 test "incircle survives ulp-scale perturbations of a near-cocircular quadruple" {
-    predicates.init();
+    try support.ready();
     const bump = std.math.ldexp(@as(f64, 1.0), -52);
     const base = [4]Point2{
         .{ .x = 1, .y = 0 },
@@ -546,7 +535,7 @@ test "incircle survives ulp-scale perturbations of a near-cocircular quadruple" 
 // ---------------------------------------------------------------------------
 
 test "insphere matches the exact oracle on ordinary inputs" {
-    predicates.init();
+    try support.ready();
     const a: Point3 = .{ .x = 1, .y = 0, .z = 0 };
     const b: Point3 = .{ .x = 0, .y = 1, .z = 0 };
     const c: Point3 = .{ .x = 0, .y = 0, .z = 1 };
@@ -557,7 +546,7 @@ test "insphere matches the exact oracle on ordinary inputs" {
 }
 
 test "insphere is exactly zero on degenerate input" {
-    predicates.init();
+    try support.ready();
     const a: Point3 = .{ .x = 1, .y = 0, .z = 0 };
     const b: Point3 = .{ .x = 0, .y = 1, .z = 0 };
     const c: Point3 = .{ .x = 0, .y = 0, .z = 1 };
@@ -587,7 +576,7 @@ test "insphere matches the exact oracle over a wide coordinate range" {
     // One hundred octaves apart, which keeps every intermediate the
     // filtered expression forms inside the double range. See the orient2d
     // note above on why the extreme ends are not used here.
-    predicates.init();
+    try support.ready();
     const small = std.math.ldexp(@as(f64, 1.0), -100);
     const large = std.math.ldexp(@as(f64, 1.0), 100);
     try checkInsphere(
@@ -609,7 +598,7 @@ test "insphere matches the exact oracle over a wide coordinate range" {
 }
 
 test "insphere survives ulp-scale perturbations of a near-cospherical quintuple" {
-    predicates.init();
+    try support.ready();
     const base = [5]Point3{
         .{ .x = 1, .y = 0, .z = 0 },
         .{ .x = 0, .y = 1, .z = 0 },
@@ -636,7 +625,7 @@ test "insphere survives ulp-scale perturbations of a near-cospherical quintuple"
 // ---------------------------------------------------------------------------
 
 test "the documented sign conventions hold on the canonical fixtures" {
-    predicates.init();
+    try support.ready();
 
     // orient2d: rotating the argument cycle keeps the sign, swapping two
     // arguments flips it. The determinant is alternating, so this is a property
@@ -668,7 +657,7 @@ fn signOf(v: f64) predicates.Sign {
 }
 
 test "the fast paths agree with the robust ones on well-conditioned input" {
-    predicates.init();
+    try support.ready();
 
     // The control for the case where they provably do not. Upstream promises
     // nothing about the *fast routines; on this input the filter is exact, so

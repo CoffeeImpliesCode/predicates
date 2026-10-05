@@ -23,6 +23,7 @@ const std = @import("std");
 const testing = std.testing;
 
 const c = @import("predicates").c;
+const support = @import("support.zig");
 
 /// Sum an expansion the way `estimate` does: from smallest to largest. For a
 /// nonoverlapping expansion this is the correctly rounded value of the exact
@@ -43,6 +44,7 @@ fn expectNoZeros(expansion: []const f64) !void {
 }
 
 test "expansion sums round-trip through every addition routine" {
+    try support.ready();
     const a = 1.0;
     const b = std.math.ldexp(@as(f64, 1.0), -60);
     const expected = a + b;
@@ -73,6 +75,7 @@ test "expansion sums round-trip through every addition routine" {
 }
 
 test "grow_expansion adds a scalar and keeps the expansion nonoverlapping" {
+    try support.ready();
     var base = [1]f64{1.0};
     var out: [8]f64 = undefined;
 
@@ -96,6 +99,7 @@ test "grow_expansion adds a scalar and keeps the expansion nonoverlapping" {
 }
 
 test "scale_expansion multiplies by a scalar" {
+    try support.ready();
     var two = [2]f64{ std.math.ldexp(@as(f64, 1.0), -60), 1.0 };
     var out: [8]f64 = undefined;
 
@@ -114,6 +118,7 @@ test "scale_expansion multiplies by a scalar" {
 }
 
 test "linear_expansion_sum adds nonoverlapping expansions" {
+    try support.ready();
     // The precondition of `linear_expansion_sum` is that the two magnitude
     // ranges do not overlap, so every component of `f` is below every
     // component of `e`.  Interleaving them (as 2^-61, 0.5 against
@@ -136,6 +141,7 @@ test "linear_expansion_sum adds nonoverlapping expansions" {
 }
 
 test "compress removes interspersed zero components" {
+    try support.ready();
     // A hand-built expansion with an interspersed zero. Upstream only promises
     // that compress drops zero components and preserves the value; the exact
     // output length is not part of the contract beyond that.
@@ -154,6 +160,7 @@ test "compress removes interspersed zero components" {
 }
 
 test "estimate recovers the value an expansion represents" {
+    try support.ready();
     var base = [1]f64{1.0};
     var out: [8]f64 = undefined;
     const grown: usize = @intCast(c.grow_expansion_zeroelim(1, &base, std.math.ldexp(@as(f64, 1.0), -52), &out));
@@ -168,6 +175,7 @@ test "estimate recovers the value an expansion represents" {
 }
 
 test "the random helpers produce finite values within their documented ranges" {
+    try support.ready();
     // Upstream ships these for its timing harness. They call the C library
     // random(), which is why this package links libc; the test is here so the
     // dependency is exercised rather than merely declared.

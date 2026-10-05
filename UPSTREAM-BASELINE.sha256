@@ -1,0 +1,169 @@
+# UPSTREAM-BASELINE.sha256
+#
+# Per-file SHA-256 baseline for every upstream byte this package carries.
+#
+# The complete answer is one line. That is not a thin record: it is the whole
+# of the upstream scope, and the sections below are what make it checkable
+# rather than merely true. Shewchuk's predicates are distributed as a single C
+# file with no header, no build system, no test suite, no test data, no
+# vendored dependency, no generated table and no licence file, so a complete
+# baseline for this SDK is one digest of one file -- and the coverage check in
+# `tools/check-provenance.sh` is what proves nothing else is being carried
+# under cover of it.
+#
+# Verified from the repository root by
+#
+#     tools/check-provenance.sh
+#
+# which is also the provenance gate CI runs. The body of this file is plain
+# `sha256sum` format, so `sha256sum -c UPSTREAM-BASELINE.sha256` is a valid
+# check on its own; it is the narrower one, because it says nothing about
+# whether the path set is complete.
+#
+# ------------------------------------------------------------------- pin ---
+# project        Shewchuk's Adaptive Precision Floating-Point Arithmetic and
+#                Fast Robust Geometric Predicates
+# author         Jonathan Richard Shewchuk, School of Computer Science,
+#                Carnegie Mellon University
+# revision       May 18, 1996, the date in the file header. There is no tag and
+#                no commit to record: the file is served from an AFS directory,
+#                not from a repository, so the header date is the whole of the
+#                revision identity that exists.
+# canonical URL  https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c
+# project page   http://www.cs.cmu.edu/~quake/robust.html
+# report         CMU-CS-96-140
+# carried as     src/predicates.c
+# licence        Public domain. The grant is the file's own header: "Placed in
+#                the public domain by Jonathan Richard Shewchuk". It travels
+#                inside the C file, so the one baseline entry covers the
+#                licence text as well as the code; there is no separate
+#                upstream LICENSE to preserve, and `NOTICE.md` reproduces the
+#                grant for a reader who does not open C.
+# archive        none. The canonical distribution is a bare HTTP file, not a
+#                release archive, so there is no archive digest to record and
+#                the digest below is of the served bytes themselves.
+#
+# These three values are also stated in `UPSTREAM.md`, and the gate fails if the
+# two documents stop agreeing:
+#
+# pin-echo: f8662c3f407d1c1c5dcd4dd49ea8b8ddd801a71827d65734206ddc3741792029 (SHA-256 of the served file; also in UPSTREAM.md)
+# pin-echo: 4f199d0294b91b89f2decff591ffa305 (MD5 of the served file; also in UPSTREAM.md)
+# pin-echo: May 18, 1996 (the revision identifier; also in UPSTREAM.md)
+# pin-echo: https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c (canonical URL; also in UPSTREAM.md)
+#
+# ------------------------------------------------------------ derivation ---
+# Every digest here was taken from a fresh fetch of the canonical URL, on
+# 2026-10-04, and not from this working tree:
+#
+#     curl -sSfL -o predicates.c https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c
+#     sha256sum predicates.c   # f8662c3f407d1c1c5dcd4dd49ea8b8ddd801a71827d65734206ddc3741792029
+#     md5sum   predicates.c    # 4f199d0294b91b89f2decff591ffa305
+#     wc -c     predicates.c   # 171536
+#     wc -l     predicates.c   # 4262
+#     cmp predicates.c ../../foundation-libs/predicates/src/predicates.c
+#
+# The four recorded values agree with the fetched file, and the fetched file is
+# byte-identical to the one this package compiles. `UPSTREAM.md` states the
+# same digest, size, line count and MD5; the gate re-derives all of them, so a
+# table that drifted from the tree fails rather than agreeing with itself.
+#
+# ---------------------------------------------------------------- counts ---
+# count: carried upstream paths in this baseline = 1
+# count: upstream algorithm sources = 1
+# count: upstream public headers = 0
+# count: upstream internal headers = 0
+# count: upstream tests and test data = 0
+# count: upstream generated-table inputs and generators = 0
+# count: upstream build files = 0
+# count: upstream data files = 0
+# count: vendored third-party files = 0
+# count: upstream licence files = 0 (the grant is inside src/predicates.c)
+# count: byte-identical to the pin = 1
+# count: recorded divergences from the pin = 0
+# count: fork-owned paths carried alongside (excluded below) = 40
+# area: src = 1
+#
+# What is absent is as much a part of the record as what is present, because
+# each absence is what forced a fork decision:
+#
+#   * No public header. `include/predicates.h` is fork-authored, transcribed
+#     from the prototypes in the comment block at the top of the upstream file
+#     (`src/predicates.c:180-429`). Nothing invented, nothing omitted.
+#   * No upstream tests and no test data. `test/` is fork work: the behavioural
+#     tests, the exact integer/rational oracle they are checked against, and
+#     the public-C-surface gate.
+#   * No upstream build file and no documented compile line. The three flags
+#     `-std=gnu17 -ffp-contract=off -fno-fast-math` are stated by upstream in
+#     prose and applied in `build.zig`; both facts are recorded in
+#     `UPSTREAM.md`.
+#   * No vendored third-party code, no generated table, no data file. Nothing in
+#     this repository is a copy of anything except `src/predicates.c`.
+#   * No upstream README. See the section below.
+#   * No CI configuration upstream. `.github/workflows/verify.yml` is fork work.
+#   * No upstream Nix packaging and no upstream lock file. `flake.nix`,
+#     `flake.lock`, `devenv.nix`, `devenv.yaml`, `package.nix` and `.envrc` are
+#     this fork's, and are declared as such in the fork-owned block below.
+#     `flake.lock` resolves to a single `nixpkgs` node at revision
+#     `c7def046b9a883d46974757852106483d741586f`, which is the revision
+#     `flake.nix` already names in `inputs.nixpkgs.url`: the lock records the
+#     resolution of a pin this file's own `flake.nix` states, and invents no
+#     input. Its SHA-256 as shipped is
+#     `ca3c2564b75f5881752ee00a5218f3263a0d61bb4a1a00bd4fd9b32448214e02`,
+#     from `sha256sum flake.lock` on 2026-10-04. That digest is a dated record
+#     and not a gate input: `tools/check-provenance.sh` does not compare it, and
+#     it is deliberately kept out of the manifest body below, because a
+#     fork-owned file listed as a carried upstream path would make this record
+#     claim two upstream files where upstream ships exactly one. Recompute it
+#     with that one command if the lock is ever re-pinned.
+#
+# There is no divergence from the pin to record: `src/predicates.c` is carried
+# unedited, and the gate checks that on every run.
+#
+# -------------------------------------------------------------- the README ---
+# must-not-exist: README.upstream.md
+#
+# Every other SDK in this workspace carries upstream's README a second time as
+# `README.upstream.md`. This one must not, and the gate fails if the file
+# appears: the canonical distribution is a bare C file with no README, so there
+# are no upstream bytes to preserve under that name, and `README.md` here is
+# fork-authored from its first line to its last. Copying the fork's own README
+# under a second name to fill the shape would manufacture a record that does
+# not exist. `NOTICE.md` says the same thing in prose.
+#
+# ---------------------------------------------------------- fork-owned files ---
+# Every carried path that is not upstream, so that coverage is total in both
+# directions: a path that is neither in the manifest nor declared here is a
+# gate failure rather than an unnoticed gap. A `fork-owned-prefix:` line covers
+# a whole directory of fork work and needs no edit when a file is added inside
+# it; a `fork-owned-file:` line is one exact path and does have to exist.
+#
+# fork-owned-file: .envrc
+# fork-owned-file: .gitignore
+# fork-owned-file: CHANGELOG.md
+# fork-owned-file: FORK-LICENSE.md
+# fork-owned-file: FORK-NOTES.md
+# fork-owned-file: NOTICE.md
+# fork-owned-file: README.md
+# fork-owned-file: README.zig.md
+# fork-owned-file: UPSTREAM-BASELINE.sha256
+# fork-owned-file: UPSTREAM.md
+# fork-owned-file: build.zig
+# fork-owned-file: build.zig.zon
+# fork-owned-file: cross-test.profile.sh
+# fork-owned-file: devenv.nix
+# fork-owned-file: devenv.yaml
+# fork-owned-file: examples/smoke.zig
+# fork-owned-file: flake.nix
+# fork-owned-file: flake.lock
+# fork-owned-file: include/predicates.h
+# fork-owned-file: package.nix
+# fork-owned-file: src/root.zig
+# fork-owned-file: tools/c_surface_gate.c
+# fork-owned-file: tools/check-provenance.sh
+# fork-owned-prefix: .github/
+# fork-owned-prefix: consumer/
+# fork-owned-prefix: runtime/
+# fork-owned-prefix: test/
+#
+# ----------------------------------------------------------- manifest ---
+f8662c3f407d1c1c5dcd4dd49ea8b8ddd801a71827d65734206ddc3741792029  src/predicates.c
