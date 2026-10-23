@@ -60,17 +60,9 @@ pub fn ready() !void {
     predicates.init();
 }
 
-/// `name`'s value in this process's environment, or null when it is not set.
-///
-/// Zig 0.16 removed every free-standing environment reader: `std.process.Init`
-/// is the only portable way in, and a test binary never gets one, because Zig's
-/// test runner owns `main`. So this reads the C environment block directly -
-/// the same `environ` symbol the standard library reads
-/// (`std/c.zig:10633`), so there is one environment and one answer.
-///
-/// The returned slice borrows the environment block, which nothing here
-/// modifies and which lives as long as the process. Nothing is allocated and
-/// nothing is freed.
+/// Reads `name` from the C environment block, or returns null when unset. Test
+/// binaries lack `std.process.Init` because the runner owns `main`; the result
+/// borrows that block for the process lifetime.
 ///
 /// This function is only reachable from the runtime-loading branch in `ready`,
 /// which a comptime-known condition prunes in a linked build, so a linked build

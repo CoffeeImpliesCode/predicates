@@ -33,7 +33,6 @@ This package wraps Shewchuk's single-file `predicates.c`. That C file is unchang
 - `-Druntime=true` independently routes facade calls through a generated dispatch table. The native artifact is still built and installed, but is not linked into that facade; a provider must export the functions and mutable globals from the same image.
 - There is no system-library option: upstream provides neither an installed library nor a stable header/ABI pairing to select.
 - `build.zig` installs the artifact, `include/predicates.h`, a generated `lib/pkgconfig/predicates.pc`, and the licence/provenance files. `package.nix` reuses that layout; `flake.nix` and `devenv.nix` call the same derivation, which builds for the native platform only.
-- The locked nixpkgs revision provides Zig 0.16.0 only; the Nix outputs require a revision that provides Zig 0.17.0.
 - The cross-target `check` compiles and links the C library, facade, tests, and example; it does not run cross-built binaries. Cross-target graphs use private modules so target-specific modules do not overwrite the public module registration.
 - Explicit `check` targets retain the requested target query. The runtime generator uses Zig 0.17's lowercase `.debug` optimization tag.
 

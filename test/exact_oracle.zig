@@ -416,12 +416,9 @@ test "decompose round-trips every value it produced" {
         // coordinate would come out positive.
         try testing.expect(d.m <= (@as(i64, 1) << 53));
         try testing.expect(d.m >= -(@as(i64, 1) << 53));
-        // Zig 0.16 ships the two-argument `ldexp(x: anytype, n: i32)
-        // @TypeOf(x)`, so the type travels in the first argument and the
-        // mantissa has to be converted before the call. The value is compared,
-        // not the bit pattern: `decompose` maps -0.0 to m = 0, e = 0, which is
-        // the same real number as +0.0, and the oracle never looks at the sign
-        // of a zero.
+        // Convert the mantissa to f64 before `ldexp`. Compare values, not bit
+        // patterns, because decomposition maps -0.0 to 0 and the oracle ignores
+        // a zero's sign.
         const rebuilt = std.math.ldexp(@as(f64, @floatFromInt(d.m)), d.e);
         try testing.expect(rebuilt == v);
     }

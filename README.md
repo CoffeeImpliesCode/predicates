@@ -72,8 +72,6 @@ Zig tests read `PREDICATES_TEST_PROVIDER`; the smoke and consumer programs accep
 
 ### Nix
 
-The Nix outputs require a Nixpkgs revision that provides Zig 0.17.0. The checked-in lock does not provide it.
-
 ```sh
 nix build .#static
 nix build .#shared
