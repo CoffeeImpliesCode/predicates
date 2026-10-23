@@ -1,11 +1,4 @@
-# Flake interface for the predicates SDK. Portable counterpart to devenv.nix;
-# both call ./package.nix, so the two cannot describe different builds.
-#
-# devenv.nix is the canonical development environment. This flake exists so the
-# SDK can be built off this host, and its devShell is tools-only parity.
-#
-# flake.lock is not written here: the driver owns locks.
-#
+# Package entry points share package.nix. The dev shell contains tools only.
 # SPDX-License-Identifier: LicenseRef-PublicDomain
 
 {
@@ -17,8 +10,7 @@
 
   outputs = { self, nixpkgs }:
     let
-      # No Windows system: src/predicates.c calls POSIX random(), which mingw-w64
-      # and the UCRT do not provide. README.md carries the boundary.
+      # Exclude Windows because upstream calls POSIX random().
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
@@ -31,7 +23,7 @@
         in
         {
           static = mk "static";
-          # "shared" names the artifact; the flag is Zig's -Dlinkage=dynamic.
+          # Artifact name "shared" selects Zig's dynamic linkage.
           shared = mk "dynamic";
           default = mk "static";
         });

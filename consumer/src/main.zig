@@ -1,23 +1,9 @@
 // SPDX-License-Identifier: LicenseRef-PublicDomain
 //
-// This file is fork-authored. `FORK-LICENSE.md` says what that identifier
-// covers and on whose authority, and `NOTICE.md` carries the file inventory.
+// Fork-authored; see FORK-LICENSE.md and NOTICE.md.
 
-//! Consumes the `predicates` package the way an outside project would.
-//!
-//! Everything here goes through the published surface only: `dep.module` in
-//! `build.zig`, and `@import("predicates")` here. No path reaches into the
-//! library's own tree, so if this builds and produces the answers below, the
-//! module contract is real.
-//!
-//! The answers are worked out by hand and independent of the library, so a
-//! mismatch is a real fault rather than a restatement of what the library just
-//! did. Any mismatch exits non-zero.
-//!
-//! In a runtime-loading build the provider is named on the command line
-//! (`--provider <path>`) or in `PREDICATES_TEST_PROVIDER`, and the program says
-//! which configuration it is in its first line. In a linked build neither is
-//! needed and neither is read.
+//! External consumer of the published `predicates` module; no source-tree imports.
+//! Checks use independently computed answers; runtime builds require an explicit provider.
 
 const std = @import("std");
 const predicates = @import("predicates");
@@ -25,7 +11,6 @@ const predicates = @import("predicates");
 /// The environment variable naming the provider for a runtime-loading run.
 const provider_env_var = "PREDICATES_TEST_PROVIDER";
 
-/// A runtime-loading build has no provider until one is named.
 const ConfigurationError = error{NoProviderConfigured};
 
 pub fn main(init: std.process.Init) !void {
@@ -43,8 +28,7 @@ pub fn main(init: std.process.Init) !void {
         if (predicates.runtime_loaded) "loaded" else "linked",
     });
 
-    // A triangle wound counterclockwise about the origin: the orientation
-    // determinant is cross((a-c), (b-c)) = cross((-1,-1), (0,-1)) = 1.
+    // Counterclockwise winding gives orientation determinant +1.
     const o = predicates.Point2;
     const t = predicates.Point3;
     const a = o{ .x = 0, .y = 0 };
@@ -52,18 +36,17 @@ pub fn main(init: std.process.Init) !void {
     const c = o{ .x = 0, .y = 1 };
     try expect(w, "orient2d(counterclockwise)", predicates.Sign.positive, try predicates.orient2dSign(a, b, c));
 
-    // The same three points with b and c exchanged: the determinant negates.
+    // Swapping two vertices negates the determinant.
     try expect(w, "orient2d(clockwise)", predicates.Sign.negative, try predicates.orient2dSign(a, c, b));
 
-    // Collinear, so the exact determinant is zero.
+    // Collinear points have zero exact determinant.
     try expect(w, "orient2d(collinear)", predicates.Sign.zero, try predicates.orient2dSign(
         o{ .x = 0, .y = 0 },
         o{ .x = 1, .y = 1 },
         o{ .x = 2, .y = 2 },
     ));
 
-    // A tetrahedron with (0,0,0), (1,0,0), (0,1,0) as its base and the apex at
-    // (0,0,-1) below it. The exact determinant is +1.
+    // The apex below the xy-plane base gives determinant +1.
     try expect(w, "orient3d(apex below the base plane)", predicates.Sign.positive, try predicates.orient3dSign(
         t{ .x = 0, .y = 0, .z = 0 },
         t{ .x = 1, .y = 0, .z = 0 },
@@ -71,8 +54,7 @@ pub fn main(init: std.process.Init) !void {
         t{ .x = 0, .y = 0, .z = -1 },
     ));
 
-    // The origin is strictly inside the unit circle through (1,0), (0,1) and
-    // (-1,0) when they are taken counterclockwise.
+    // The origin is inside the counterclockwise unit circle.
     try expect(w, "incircle(centre inside)", predicates.Sign.positive, try predicates.incircleSign(
         o{ .x = 1, .y = 0 },
         o{ .x = 0, .y = 1 },
@@ -80,9 +62,7 @@ pub fn main(init: std.process.Init) !void {
         o{ .x = 0, .y = 0 },
     ));
 
-    // The origin is strictly inside the circumsphere of the tetrahedron
-    // (1,0,0) (0,1,0) (0,0,1) (-1,-1,-1), whose circumsphere has centre
-    // (-1/4,-1/4,-1/4) and squared radius 27/16.
+    // The origin is inside this tetrahedron's circumsphere.
     try expect(w, "insphere(origin inside)", predicates.Sign.positive, try predicates.insphereSign(
         t{ .x = 1, .y = 0, .z = 0 },
         t{ .x = 0, .y = 1, .z = 0 },
@@ -91,14 +71,8 @@ pub fn main(init: std.process.Init) !void {
         t{ .x = 0, .y = 0, .z = 0 },
     ));
 
-    // The raw C escape hatch is part of the published surface too, and this is
-    // where a dependent proves the library it reached is the one the header
-    // describes. Two_Sum is an error-free transformation, and 1 + 2^-53 is
-    // exactly half way between 1.0 and the next double, so binary64 rounds it
-    // to even and returns exactly 1.0: the bit is gone the moment plain
-    // arithmetic touches it. Growing the one-component expansion [1.0] by
-    // 2^-53 has to hand back the two-component expansion [2^-53, 1.0], which
-    // still represents the value plain arithmetic cannot hold.
+    // Two_Sum preserves the half-ULP lost by plain binary64 addition.
+    // Growing `[1.0]` by `2^-53` must return `[2^-53, 1.0]`.
     const half_ulp = std.math.ldexp(@as(f64, 1.0), -53);
     var single = [1]f64{1.0};
     var expanded: [4]f64 = undefined;
@@ -110,17 +84,12 @@ pub fn main(init: std.process.Init) !void {
         if (naive == 1.0) "1.0" else "other",
         if (recovered) "exact" else "inexact",
     });
-    // If plain arithmetic had not lost the bit, this fixture would prove
-    // nothing about the transformation.
+    // Require ordinary addition to lose the half-ULP; otherwise the fixture proves nothing.
     if (naive != 1.0) return error.ConsumerCheckFailed;
     if (!recovered) return error.ConsumerCheckFailed;
 
-    // The three implementations of the 2D orientation determinant have to agree
-    // on an input where only exact arithmetic can decide. The exact determinant
-    // of ((1+2^-52, 1), (1, 1-2^-52), (0,0)) is (1+2^-52)(1-2^-52) - 1, which
-    // is -2^-104: negative, and about 2^-156 of the terms it comes from. Both
-    // products round to 1.0 in binary64, so a filtered implementation sees zero
-    // and only the exact ones can produce the sign.
+    // Exact determinant is -2^-104 although both products round to 1.0.
+    // The fast filter sees zero; exact variants must retain the negative sign.
     const bump = std.math.ldexp(@as(f64, 1.0), -52);
     const near = [2]f64{ 1 + bump, 1 };
     const near_b = [2]f64{ 1, 1 - bump };
@@ -135,21 +104,13 @@ pub fn main(init: std.process.Init) !void {
         labelOf(variants[1]),
         labelOf(variants[2]),
     });
-    // `inline` because the three entries are computed at run time: a runtime
-    // `for` would index this tuple with a run-time index, and a tuple field
-    // index has to be comptime-known. Unrolling keeps all three assertions
-    // rather than dropping a row, which is what a runtime `for` would force.
+    // Tuple fields require comptime indices, so unroll this check.
     inline for (variants) |value| {
         if (!(value < 0.0)) return error.ConsumerCheckFailed;
     }
 
-    // The fifteen file-scope constants, read through the typed accessors and
-    // compared against what the initialization loop in `src/predicates.c:658-667`
-    // produces for IEEE 754 binary64. This consumer re-derives them rather than
-    // asking the library, so a provider that was never initialized, or that was
-    // built for a narrower floating-point format, or that handed back a copy
-    // rather than its own data, fails here instead of silently answering every
-    // predicate wrongly.
+    // Compare all 15 provider-owned constants with values independently measured from `exactinit`.
+    // This detects missing initialization, wrong precision, or copied data.
     const measured = measure();
     try w.print("constants epsilon {d} splitter {d} resulterrbound {d}\n", .{
         predicates.epsilon(),
@@ -161,8 +122,7 @@ pub fn main(init: std.process.Init) !void {
     if (predicates.resultErrorBound() !=
         (3.0 + 8.0 * measured.epsilon) * measured.epsilon) return error.ConsumerCheckFailed;
 
-    // And the raw route sees the same storage, so a dependent that needs the
-    // constants can reach them without the typed layer.
+    // Raw accessors must expose the same storage as typed accessors.
     if (rawConstant("epsilon") != predicates.epsilon()) return error.ConsumerCheckFailed;
     if (rawConstant("isperrboundC") != predicates.insphereErrorBounds()[2]) {
         return error.ConsumerCheckFailed;
@@ -172,10 +132,7 @@ pub fn main(init: std.process.Init) !void {
     try w.flush();
 }
 
-/// What one `exactinit` run writes for the running floating-point format.
-///
-/// `src/predicates.c:649-667`, transcribed: halve `epsilon` until adding it to
-/// one no longer moves one, double `splitter` on every other pass, then add one.
+/// Binary64 constants measured by an independent `exactinit` calculation.
 const Measured = struct { epsilon: f64, splitter: f64 };
 
 fn measure() Measured {
@@ -194,12 +151,8 @@ fn measure() Measured {
     return .{ .epsilon = epsilon, .splitter = splitter + 1.0 };
 }
 
-/// One of the fifteen constants through the raw route.
-///
-/// In a runtime-loading build the dispatch publishes `NAMEAddr()` per data
-/// symbol, and that accessor is what checks readiness and returns the address
-/// the loader resolved inside the loaded image. A linked build has no accessor
-/// and no table, and the linked library's own storage is the same object.
+/// Reads a provider-owned constant through raw C or runtime dispatch.
+/// Runtime builds use `NAMEAddr()`; linked builds read the exported object.
 fn rawConstant(comptime name: []const u8) f64 {
     if (comptime predicates.runtime_loaded) return @field(predicates.c, name ++ "Addr")().*;
     return @field(predicates.c, name);
@@ -209,7 +162,6 @@ fn labelOf(v: f64) []const u8 {
     return if (v > 0.0) "positive" else if (v < 0.0) "negative" else "zero";
 }
 
-/// The same three names for a value the facade already reduced to a sign.
 fn signLabel(s: predicates.Sign) []const u8 {
     return switch (s) {
         .negative => "negative",
@@ -218,8 +170,7 @@ fn signLabel(s: predicates.Sign) []const u8 {
     };
 }
 
-/// The provider this run should load, from `--provider <path>` or from
-/// `PREDICATES_TEST_PROVIDER`.
+/// Reads the provider path from `--provider` or `PREDICATES_TEST_PROVIDER`.
 fn providerRequest(init: std.process.Init) ConfigurationError![]const u8 {
     const args = init.minimal.args.toSlice(init.arena.allocator()) catch
         return noProvider();
@@ -234,8 +185,7 @@ fn providerRequest(init: std.process.Init) ConfigurationError![]const u8 {
         return noProvider();
 }
 
-/// Say which variable is missing. An error name on its own would send the next
-/// person into the loader instead of to the command line.
+/// Prints explicit guidance when no runtime provider was named.
 fn noProvider() ConfigurationError {
     std.debug.print(
         "consumer: this is a runtime-loading build. Pass --provider <path>, or " ++

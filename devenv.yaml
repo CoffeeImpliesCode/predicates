@@ -1,11 +1,4 @@
-# devenv input pin for the predicates SDK.
-#
-# The nixpkgs channel is pinned by revision so that a shell is reproducible from
-# the lock. The matching flake input lives in flake.nix and is pinned
-# independently, because the two entry points resolve in different contexts.
-#
-# devenv.lock is not written here: the driver owns locks.
-#
+# devenv pins nixpkgs independently from flake.nix.
 # SPDX-License-Identifier: LicenseRef-PublicDomain
 inputs:
   nixpkgs:

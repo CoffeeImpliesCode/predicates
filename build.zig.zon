@@ -1,60 +1,32 @@
 // SPDX-License-Identifier: LicenseRef-PublicDomain
 //
-// See FORK-LICENSE.md for what that identifier covers and NOTICE.md for the
-// file inventory. src/predicates.c is upstream's own public-domain file and
-// is outside it.
-//
+// Fork terms are in FORK-LICENSE.md. NOTICE.md records the upstream public-domain source.
 .{
-    // This is the default name used by packages depending on this one.
     .name = .predicates,
     .version = "0.1.0",
-    // Identifies this package unambiguously. This fork is new, so the id was
-    // generated for it rather than inherited from an upstream Zig package;
-    // there is no upstream Zig package to be hostile about it. The value is
-    // the one the Zig 0.16.0 compiler reported for `.name = .predicates`
-    // when it rejected the first generated id; FORK-NOTES.md section 20
-    // carries the receipt.
     .fingerprint = 0xdce97c15e1aa9aa4, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        // src/predicates.c is the canonical upstream source and is the whole
-        // point of the package. src/root.zig is the facade over it.
+        // Canonical C source and Zig facade.
         "src",
-        // The aggregate translated header. It is fork-authored and lives in
-        // include/, not src/, so that the C tree stays exactly upstream's.
+        // Aggregate translated header.
         "include",
         "test",
         "examples",
-        // The separate consumer package. It is inside this repository so the
-        // dependency it proves is a relative path that resolves without a
-        // network fetch or a registry entry.
         "consumer/build.zig",
         "consumer/build.zig.zon",
         "consumer/src/main.zig",
-        // The runtime-loading route. `runtime/graph.zig` and
-        // `runtime/library.zig` are the API role's; `runtime/loader.zig`,
-        // `runtime/sync.c`, `runtime/sync.h` and `runtime/generate.zig` are the
-        // loader core the driver copies in. All five are load-bearing for
-        // `-Druntime=true`, and `build.zig` reaches into this directory by name,
-        // so a fetched package without it would carry an option that cannot
-        // work. The linked default does not read any of it, which is why the
-        // dependency stays lazy rather than being duplicated into `build.zig`.
+        // Runtime loader and dispatch sources.
         "runtime",
-        // The cross-test settings profile and the provenance script CI runs.
+        // Cross-test profile.
         "cross-test.profile.sh",
         "tools",
-        // Documentation and licence records. A package that arrived without
-        // these would ship a public-domain file whose grant the recipient
-        // cannot find: upstream has no LICENSE to carry, so NOTICE.md is the
-        // notice, and FORK-LICENSE.md records the terms the fork-authored files
-        // around it were released under.
+        // Package documentation and licence records.
         "UPSTREAM.md",
-        // The per-file SHA-256 baseline for the one upstream file this package
-        // carries, checked by `tools/check-provenance.sh`. A fetched package
-        // that arrived without it could still be built, but not audited.
+        // Per-file upstream source digest.
         "UPSTREAM-BASELINE.sha256",
         "NOTICE.md",
         "FORK-LICENSE.md",
@@ -62,22 +34,10 @@
         "FORK-NOTES.md",
         "README.md",
         "README.zig.md",
-        // The Nix and devenv packaging. These are not needed to compile the
-        // library, which is why a build without them works, but they are the
-        // package's own delivery description and a fetched consumer that could
-        // not see them would be reading a package with no stated terms.
-        // `.envrc` is named explicitly rather than swept in: this list is
-        // spelled out entry by entry, so a dotfile has to be written down like
-        // any other path.
+        // Nix and devenv packaging.
         "package.nix",
         "flake.nix",
-        // The resolved inputs of the flake above. It is not needed to compile
-        // the library, which is why a build without it works, but a fetched
-        // package that carried `flake.nix` and not its lock would re-resolve
-        // `nixpkgs` at evaluation time and report a different pin than the
-        // one this repository ships. `devenv.lock` is absent from this tree
-        // and is deliberately not named here: naming a path that does not
-        // exist would make `zig fetch` hash a missing entry.
+        // Resolved flake inputs.
         "flake.lock",
         "devenv.nix",
         "devenv.yaml",
