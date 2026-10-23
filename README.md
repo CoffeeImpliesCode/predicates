@@ -1,6 +1,6 @@
 # predicates
 
-Shewchuk's adaptive-precision geometric predicates, packaged for Zig 0.16.0.
+Shewchuk's adaptive-precision geometric predicates, packaged for Zig 0.17.0.
 Upstream is the May 18, 1996 source revision; it has no tag or release series. This fork's package version is `0.1.0`.
 
 ## Source deviations from upstream
@@ -71,6 +71,8 @@ Set `.link_libc = true` on the consumer module. The facade module name is `predi
 Zig tests read `PREDICATES_TEST_PROVIDER`; the smoke and consumer programs accept `--provider <path>`. See `README.zig.md` for runtime loading and facade contracts.
 
 ### Nix
+
+The Nix outputs require a Nixpkgs revision that provides Zig 0.17.0. The checked-in lock does not provide it.
 
 ```sh
 nix build .#static

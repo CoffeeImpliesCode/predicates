@@ -191,7 +191,6 @@ fn addGraph(
         runtime_graph.createModule(b, translate_c, target, optimize)
     else
         translate_c.createModule();
-
     const module = if (public)
         b.addModule("predicates", .{
             .root_source_file = b.path("src/root.zig"),
@@ -347,7 +346,7 @@ pub fn build(b: *std.Build) !void {
 
     // The smoke step runs the example without depending on installation.
     const run_example = b.addRunArtifact(example);
-    if (b.args) |args| run_example.addArgs(args);
+    run_example.addPassthruArgs();
     const smoke_step = b.step("smoke", "Run the deterministic example");
     smoke_step.dependOn(&run_example.step);
 

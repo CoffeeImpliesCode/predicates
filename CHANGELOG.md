@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Port to Zig 0.17.0.
 - Updated test, example and consumer calls to Zig 0.16's typed two-argument `std.math.ldexp` API.
 - Changed the Zig dependency example to the local path used by `consumer/build.zig.zon`.
 - Documented `x86_64-windows-gnu` as unsupported: upstream calls POSIX `random()` and declares no PE/COFF exports.

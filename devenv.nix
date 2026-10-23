@@ -4,7 +4,7 @@
 { pkgs, lib, ... }:
 
 let
-  zig = pkgs.zig_0_16;
+  zig = pkgs.zig_0_17;
   mk = linkage: pkgs.callPackage ./package.nix { inherit linkage; zig = zig; };
 
   # Resolve the SDK's absolute path from this module, not the caller's directory.
@@ -71,8 +71,8 @@ in
 
   assertions = [
     {
-      assertion = zig.version == "0.16.0";
-      message = "predicates requires Zig 0.16.0; nixpkgs resolved zig_0_16 to ${zig.version}";
+      assertion = zig.version == "0.17.0";
+      message = "predicates requires Zig 0.17.0; nixpkgs resolved zig_0_17 to ${zig.version}";
     }
   ];
 
