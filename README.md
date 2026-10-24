@@ -42,12 +42,10 @@ These target triples are in the build graph's compile/link matrix. Runtime loadi
 
 ### Zig dependency
 
-This checkout is not published. Use a relative path in `build.zig.zon`:
+Fetch the tagged release to add its URL and hash to the consumer's `build.zig.zon`:
 
-```zig
-.dependencies = .{
-    .predicates = .{ .path = "../predicates" },
-},
+```sh
+zig fetch --save git+https://github.com/CoffeeImpliesCode/predicates#v0.1.0
 ```
 
 Then import the module; it carries the native library, so no separate link step is needed:
