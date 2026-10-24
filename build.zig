@@ -207,9 +207,9 @@ fn addGraph(
         });
     module.addImport("c", c_module);
 
-        // Import the loader core only in linked mode so its public types stay unique.
-        // Runtime dispatch re-exports those types; do not register a second core.
-        // The facade's comptime branch omits this import in runtime mode.
+    // Import the loader core only in linked mode so its public types stay unique.
+    // Runtime dispatch re-exports those types; do not register a second core.
+    // The facade's comptime branch omits this import in runtime mode.
     if (!runtime) {
         module.addImport("rt", runtime_graph.createCoreModule(b, target, optimize));
 
